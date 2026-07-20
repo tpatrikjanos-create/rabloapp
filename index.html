@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Rabló App</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --bg:#081420; --bg2:#0c1f2e; --accent:#1ec8ff; --accent2:#0e6fa8;
+    --text:#eafbff; --muted:#5a8fa8; --red:#e84040; --red2:#a81f1f;
+    --ease-spring:cubic-bezier(.34,1.56,.64,1);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;touch-action:none;}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:'Nunito',-apple-system,sans-serif;
+    display:flex;flex-direction:column;
+  }
+  #ambient{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+  #ambient span{position:absolute;border-radius:50%;opacity:.22;will-change:transform}
+  #ambient span:nth-child(1){width:60vmax;height:60vmax;left:-20vmax;top:-22vmax;background:radial-gradient(circle,var(--accent),transparent 68%);animation:amb1 26s ease-in-out infinite}
+  #ambient span:nth-child(2){width:50vmax;height:50vmax;right:-18vmax;bottom:-16vmax;background:radial-gradient(circle,#6C4CD6,transparent 68%);opacity:.14;animation:amb2 32s ease-in-out infinite}
+  @keyframes amb1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(6vmax,7vmax) scale(1.1)}}
+  @keyframes amb2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-6vmax,5vmax) scale(1.08)}}
+
+  /* ===== CSAPATVÁLASZTÓ ===== */
+  #pick-view{
+    position:relative;z-index:1;flex:1;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:32px 24px;gap:20px;
+  }
+  #pick-view.hidden{display:none;}
+  #pick-view h1{
+    font-family:'Bebas Neue',sans-serif;font-size:38px;letter-spacing:3px;
+    margin:0 0 4px;color:var(--accent);text-shadow:0 0 24px rgba(30,200,255,.5);
+  }
+  #pick-view p{margin:0 0 16px;color:var(--muted);font-size:14px;text-align:center;}
+  #team-grid{display:flex;flex-direction:column;gap:12px;width:100%;max-width:420px;}
+  .team-btn{
+    padding:18px 20px;border-radius:16px;border:2px solid rgba(255,255,255,.1);
+    background:rgba(255,255,255,.05);color:var(--text);font:inherit;font-size:19px;font-weight:800;
+    cursor:pointer;text-align:left;transition:transform .12s var(--ease-spring), background .15s;
+    border-left-width:6px;
+  }
+  .team-btn:active{transform:scale(.97);background:rgba(255,255,255,.1);}
+  #pick-empty{color:var(--muted);text-align:center;font-size:14px;line-height:1.6;}
+
+  /* ===== GOMB NÉZET ===== */
+  #btn-view{position:relative;z-index:1;flex:1;display:none;flex-direction:column;}
+  #btn-view.active{display:flex;}
+  .top-bar{
+    flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;
+  }
+  .team-tag{
+    font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .team-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;}
+  .change-team{
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:var(--muted);
+    font:inherit;font-size:12px;padding:8px 12px;border-radius:10px;cursor:pointer;
+  }
+  .change-team:active{background:rgba(255,255,255,.15);}
+
+  #big-btn-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;}
+  #big-btn{
+    width:min(72vw,340px);height:min(72vw,340px);border-radius:50%;border:none;
+    background:radial-gradient(circle at 35% 30%,#ff6b5c,var(--red) 55%,var(--red2) 100%);
+    box-shadow:0 0 0 10px rgba(232,64,64,.12),0 20px 60px rgba(232,64,64,.4),inset 0 -10px 30px rgba(0,0,0,.35);
+    color:#fff;font-family:'Bebas Neue',sans-serif;font-size:clamp(28px,8vw,44px);letter-spacing:2px;
+    cursor:pointer;transition:transform .12s var(--ease-spring), box-shadow .15s;
+    display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.15;
+    -webkit-user-select:none;user-select:none;
+  }
+  #big-btn:active{transform:scale(.95);}
+  #big-btn.disabled{
+    background:radial-gradient(circle at 35% 30%,#3a4552,#232c36 55%,#151b21 100%);
+    box-shadow:0 0 0 10px rgba(255,255,255,.03);color:var(--muted);cursor:default;
+    pointer-events:none;
+  }
+  #big-btn.claimed{
+    background:radial-gradient(circle at 35% 30%,#4ee6ff,var(--accent) 55%,var(--accent2) 100%);
+    box-shadow:0 0 0 10px rgba(30,200,255,.15),0 20px 60px rgba(30,200,255,.4),inset 0 -10px 30px rgba(0,0,0,.25);
+  }
+  @keyframes btnPulse{0%,100%{box-shadow:0 0 0 10px rgba(232,64,64,.12),0 20px 60px rgba(232,64,64,.4),inset 0 -10px 30px rgba(0,0,0,.35)}
+    50%{box-shadow:0 0 0 22px rgba(232,64,64,.22),0 20px 70px rgba(232,64,64,.55),inset 0 -10px 30px rgba(0,0,0,.35)}}
+  #big-btn.live{animation:btnPulse 1.1s ease-in-out infinite;}
+
+  #hint{flex:0 0 auto;text-align:center;padding:0 24px 28px;color:var(--muted);font-size:13px;min-height:20px;}
+  #hint.claimed-text{color:var(--accent);font-weight:800;}
+
+  @media (prefers-reduced-motion: reduce){ #ambient span,#big-btn.live{animation:none!important} }
+
+  /* ===== TELJES KÉPERNYŐS INDÍTÓ OVERLAY ===== */
+  #fs-start{
+    position:fixed;inset:0;z-index:999;background:var(--bg);cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;
+  }
+  #fs-start h1{
+    font-family:'Bebas Neue',sans-serif;font-size:44px;letter-spacing:4px;margin:0;
+    color:var(--accent);text-shadow:0 0 30px rgba(30,200,255,.5);
+  }
+  #fs-start button{
+    padding:22px 40px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;
+    border-radius:18px;color:#fff;font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:2px;
+    cursor:pointer;box-shadow:0 8px 28px rgba(30,200,255,.4);
+  }
+  #fs-start p{margin:0;font-size:12px;color:var(--muted);}
+
+  /* Intro overlay - "Új játék" indításakor fut le a GM App jelzésére */
+  #intro-overlay{position:fixed;inset:0;z-index:998;background:var(--bg);display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;pointer-events:none}
+  #intro-overlay.show{display:flex;animation:introFadeOut 2.5s ease forwards}
+  .intro-logo{font-size:56px;animation:introPop .6s var(--ease-spring)}
+  .intro-title{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:.15em;color:var(--accent);text-shadow:0 0 24px rgba(30,200,255,.5);opacity:0;animation:introTitleIn .5s ease .3s forwards}
+  @keyframes introPop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+  @keyframes introTitleIn{to{opacity:1}}
+  @keyframes introFadeOut{0%,72%{opacity:1}100%{opacity:0}}
+
+  /* Diszkrét intro-hang feltöltő gomb + panel */
+  #intro-open-btn{position:fixed;bottom:6px;left:9px;z-index:900;background:none;border:none;font-size:14px;opacity:.28;cursor:pointer;padding:6px}
+  #intro-panel{display:none;position:fixed;inset:0;z-index:997;background:rgba(8,10,16,.97);color:var(--text);font-family:'Nunito',sans-serif;padding:20px}
+  #intro-panel.open{display:block}
+  #intro-panel h2{margin:0 0 6px;font-size:18px}
+  #intro-panel p{font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 16px}
+  #intro-panel .al-upload{display:inline-block;background:var(--accent2);color:#fff;padding:11px 18px;border-radius:10px;cursor:pointer;font-weight:700;font-size:14px;margin-bottom:14px}
+  #intro-panel .al-close{background:#1b1c22;border:none;color:var(--text);padding:9px 16px;border-radius:10px;cursor:pointer;font-weight:700;float:right}
+  @media (prefers-reduced-motion: reduce){ #intro-overlay.show{animation:none} }
+</style>
+</head>
+<body>
+
+<div id="ambient"><span></span><span></span></div>
+
+<div id="fs-start" onclick="RabloIntro.startFullscreen()">
+  <h1>RABLÓ APP</h1>
+  <button onclick="RabloIntro.startFullscreen()">⛶ Indítás teljes képernyőn</button>
+  <p>Koppints bárhová a teljes képernyős módhoz</p>
+</div>
+
+<div id="pick-view">
+  <h1>RABLÓ APP</h1>
+  <p>Válaszd ki a csapatod</p>
+  <div id="team-grid"></div>
+  <div id="pick-empty" style="display:none;">Még nincsenek csapatok beállítva a kivetítőn.<br>Kérd meg a játékmestert, hogy indítsa el ott a meccset.</div>
+</div>
+
+<div id="btn-view">
+  <div class="top-bar">
+    <div class="team-tag"><span class="team-dot" id="team-dot"></span><span id="team-name"></span></div>
+    <button class="change-team" id="change-team-btn" style="display:none">Csapat csere</button>
+  </div>
+  <div id="big-btn-wrap">
+    <button id="big-btn" class="disabled">RABLÁS</button>
+  </div>
+  <div id="hint">Várj, amíg fut az időzítő…</div>
+</div>
+
+<div style="position:fixed;bottom:6px;right:9px;z-index:900;font-size:10px;color:rgba(255,255,255,.28);pointer-events:none;font-family:'Nunito',sans-serif">v1.1</div>
+
+<div id="intro-overlay">
+  <div class="intro-logo">🕵️</div>
+  <div class="intro-title">RABLÓ APP</div>
+</div>
+<button id="intro-open-btn" title="Intro hang">🎬</button>
+<div id="intro-panel">
+  <button class="al-close" id="intro-close-btn">Bezár</button>
+  <h2>Intro hang</h2>
+  <p>Ez a hang szól, amikor a GM App-ban "Új játék"-ot indítasz.</p>
+  <label class="al-upload" for="intro-file-input">⬆ Hang feltöltése</label>
+  <input type="file" id="intro-file-input" accept="audio/*" style="display:none">
+  <div id="intro-name" style="font-size:13px;color:var(--muted)">Nincs intro-hang beállítva</div>
+</div>
+
+<script>
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyCaQYwKXkmTyKX-oUDYnvYmXeyP9PR8WEU",
+  authDomain:        "activity-centrum.firebaseapp.com",
+  databaseURL:       "https://activity-centrum-default-rtdb.firebaseio.com",
+  projectId:         "activity-centrum",
+  storageBucket:     "activity-centrum.firebasestorage.app",
+  messagingSenderId: "1008452626252",
+  appId:             "1:1008452626252:web:2f5f542e7b4785fa4551e9"
+};
+
+const RabloIntro = {
+  startFullscreen() {
+    document.getElementById('fs-start').style.display = 'none';
+    try {
+      const d = document.documentElement;
+      if (d.requestFullscreen) d.requestFullscreen({ navigationUI: 'hide' });
+      else if (d.webkitRequestFullscreen) d.webkitRequestFullscreen();
+      else if (d.mozRequestFullScreen) d.mozRequestFullScreen();
+    } catch (e) {}
+  }
+};
+
+let fbDB = null;
+let myTeamId = localStorage.getItem('rablo_teamId');
+let myTeamName = localStorage.getItem('rablo_teamName') || '';
+let myTeamColor = localStorage.getItem('rablo_teamColor') || '#888';
+let teamsData = [];
+let gameStatus = 'idle';
+let robberyQueueTeamIds = [];
+let currentTurnIndex = -1;
+let currentMode = '';
+const LIP_MODE = 'Szájról olvasás!'; // ennél a módnál nem lehet rabolni - nincs mód mindenkire fejhallgatót adni
+
+function initFirebase() {
+  if (!FIREBASE_CONFIG.databaseURL) return;
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    fbDB = firebase.database();
+    attachListeners();
+  } catch (e) { console.warn('[Rabló App] Firebase init hiba:', e); }
+}
+
+function attachListeners() {
+  fbDB.ref('activityTeams').on('value', s => renderTeams(s.val()));
+  fbDB.ref('activityGame').on('value', s => onGameChange(s.val()));
+  fbDB.ref('activityRobbery/queue').on('value', s => onQueueChange(s.val()));
+
+  let lastNewGameSignal = null;
+  const newGameAttachedAt = Date.now();
+  fbDB.ref('activityControl/newGameSignal').on('value', snap => {
+    const v = snap.val();
+    if (v == null) return;
+    if (v === lastNewGameSignal) return;
+    const isStale = lastNewGameSignal === null && typeof v === 'number' && v < newGameAttachedAt;
+    lastNewGameSignal = v;
+    if (!isStale) IntroKit.play();
+  });
+}
+
+/* ===== Intro hang (IndexedDB) + intro overlay ===== */
+const IntroKit = (() => {
+  const DB = 'reactivity_intro_rablo', STORE = 'intro';
+  let db = null;
+  function openDB() {
+    return new Promise((res, rej) => {
+      if (db) return res(db);
+      const r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = e => { e.target.result.createObjectStore(STORE); };
+      r.onsuccess = e => { db = e.target.result; res(db); };
+      r.onerror = rej;
+    });
+  }
+  async function save(file) { const d = await openDB(); return new Promise((res, rej) => { const tx = d.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(file, 'track'); tx.oncomplete = res; tx.onerror = rej; }); }
+  async function load() { const d = await openDB(); return new Promise((res, rej) => { const tx = d.transaction(STORE, 'readonly'); const req = tx.objectStore(STORE).get('track'); req.onsuccess = () => res(req.result || null); req.onerror = rej; }); }
+  function play(onDone) {
+    const overlay = document.getElementById('intro-overlay');
+    if (!overlay) { if (onDone) onDone(); return; }
+    overlay.classList.add('show');
+    load().then(blob => { if (blob) { try { new Audio(URL.createObjectURL(blob)).play().catch(() => {}); } catch (e) {} } });
+    setTimeout(() => { overlay.classList.remove('show'); if (onDone) onDone(); }, 2500);
+  }
+  return { save, load, play };
+})();
+
+(function IntroUI() {
+  const panel = document.getElementById('intro-panel');
+  const openBtn = document.getElementById('intro-open-btn');
+  const closeBtn = document.getElementById('intro-close-btn');
+  const fileInput = document.getElementById('intro-file-input');
+  const nameEl = document.getElementById('intro-name');
+  async function refresh() { const blob = await IntroKit.load(); nameEl.textContent = blob ? '🎵 Intro hang beállítva' : 'Nincs intro-hang beállítva'; }
+  openBtn.addEventListener('click', () => { panel.classList.add('open'); refresh(); });
+  closeBtn.addEventListener('click', () => panel.classList.remove('open'));
+  fileInput.addEventListener('change', async () => {
+    if (fileInput.files && fileInput.files[0]) { await IntroKit.save(fileInput.files[0]); refresh(); }
+    fileInput.value = '';
+  });
+})();
+
+function renderTeams(data) {
+  teamsData = (data && Array.isArray(data.teams)) ? data.teams : [];
+  currentTurnIndex = (data && typeof data.turnIndex === 'number') ? data.turnIndex : -1;
+  const grid = document.getElementById('team-grid');
+  const empty = document.getElementById('pick-empty');
+  if (!teamsData.length) {
+    grid.innerHTML = '';
+    empty.style.display = '';
+    updateButtonState();
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = teamsData.map(t => `
+    <button class="team-btn" style="border-left-color:${t.color || '#888'}" onclick="selectTeam('${t.id}')">
+      ${t.name || ('#' + t.id)}
+    </button>`).join('');
+
+  // Ha korábban választott csapat már nincs a listában, visszaküldjük választani
+  if (myTeamId && !teamsData.some(t => String(t.id) === String(myTeamId))) {
+    forgetTeam();
+  } else if (myTeamId) {
+    const t = teamsData.find(t => String(t.id) === String(myTeamId));
+    if (t) { myTeamName = t.name; myTeamColor = t.color || '#888'; }
+    showBtnView();
+  }
+}
+
+function selectTeam(id) {
+  const t = teamsData.find(t => String(t.id) === String(id));
+  if (!t) return;
+  myTeamId = String(t.id);
+  myTeamName = t.name || ('#' + t.id);
+  myTeamColor = t.color || '#888';
+  localStorage.setItem('rablo_teamId', myTeamId);
+  localStorage.setItem('rablo_teamName', myTeamName);
+  localStorage.setItem('rablo_teamColor', myTeamColor);
+  showBtnView();
+}
+
+function forgetTeam() {
+  myTeamId = null;
+  localStorage.removeItem('rablo_teamId');
+  localStorage.removeItem('rablo_teamName');
+  localStorage.removeItem('rablo_teamColor');
+  document.getElementById('pick-view').classList.remove('hidden');
+  document.getElementById('btn-view').classList.remove('active');
+}
+
+function showBtnView() {
+  document.getElementById('pick-view').classList.add('hidden');
+  document.getElementById('btn-view').classList.add('active');
+  document.getElementById('team-name').textContent = myTeamName;
+  document.getElementById('team-dot').style.background = myTeamColor;
+  updateButtonState();
+}
+
+document.getElementById('change-team-btn').addEventListener('click', forgetTeam);
+
+function onGameChange(data) {
+  gameStatus = (data && data.status) || 'idle';
+  currentMode = (data && data.mode) || '';
+  updateButtonState();
+}
+
+function onQueueChange(queueObj) {
+  const entries = queueObj ? Object.values(queueObj) : [];
+  robberyQueueTeamIds = entries.map(e => String(e.teamId));
+  updateButtonState();
+}
+
+function updateButtonState() {
+  const btn = document.getElementById('big-btn');
+  const hint = document.getElementById('hint');
+  if (!myTeamId) return;
+
+  const alreadyClaimed = robberyQueueTeamIds.includes(String(myTeamId));
+  const running = gameStatus === 'running';
+  const isMyTurn = currentTurnIndex >= 0 && String(currentTurnIndex) === String(myTeamId);
+  const isLipMode = (currentMode || '').trim() === LIP_MODE;
+
+  btn.classList.remove('disabled', 'live', 'claimed');
+  hint.classList.remove('claimed-text');
+
+  if (isLipMode) {
+    // Szájról olvasás módnál nincs mód a rablásra (nem tudunk minden
+    // csapatból 1 játékosnak fejhallgatót adni, hogy ők se halljanak semmit).
+    btn.classList.add('disabled');
+    btn.textContent = 'RABLÁS';
+    hint.textContent = 'Szájról olvasásnál nem lehet rabolni.';
+  } else if (isMyTurn) {
+    // A saját csapatod köre fut - a saját feladványodat nem rabolhatod el magadtól.
+    btn.classList.add('disabled');
+    btn.textContent = 'RABLÁS';
+    hint.textContent = 'Most nem lehetséges a rablás (a ti körötök van).';
+  } else if (alreadyClaimed) {
+    btn.classList.add('claimed');
+    btn.textContent = 'JELEZVE!';
+    const rank = robberyQueueTeamIds.indexOf(String(myTeamId)) + 1;
+    hint.textContent = `Te vagy a(z) ${rank}. jelentkező ebben a körben.`;
+    hint.classList.add('claimed-text');
+  } else if (running) {
+    btn.classList.add('live');
+    btn.textContent = 'RABLÁS';
+    hint.textContent = 'Nyomd meg, ha tudod a választ!';
+  } else {
+    btn.classList.add('disabled');
+    btn.textContent = 'RABLÁS';
+    hint.textContent = 'Várj, amíg fut az időzítő…';
+  }
+}
+
+document.getElementById('big-btn').addEventListener('click', () => {
+  if (!myTeamId || !fbDB) return;
+  if (gameStatus !== 'running') return;
+  if ((currentMode || '').trim() === LIP_MODE) return; // szájról olvasásnál nincs rablás
+  if (currentTurnIndex >= 0 && String(currentTurnIndex) === String(myTeamId)) return; // saját kör - nem rabolhat magától
+  if (robberyQueueTeamIds.includes(String(myTeamId))) return;
+  if (navigator.vibrate) navigator.vibrate(40);
+  fbDB.ref('activityRobbery/queue').push({
+    teamId: myTeamId,
+    teamName: myTeamName,
+    ts: Date.now()
+  }).catch(err => console.error('[Rabló App] Jelzés küldési hiba:', err));
+});
+
+let wakeLock = null;
+async function keepAwake() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+document.addEventListener('click', keepAwake, { once: true });
+
+document.addEventListener('DOMContentLoaded', initFirebase);
+</script>
+</body>
+</html>
