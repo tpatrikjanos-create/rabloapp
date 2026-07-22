@@ -160,7 +160,7 @@
   <div id="hint">Várj, amíg fut az időzítő…</div>
 </div>
 
-<div style="position:fixed;bottom:6px;right:9px;z-index:900;font-size:10px;color:rgba(255,255,255,.28);pointer-events:none;font-family:'Nunito',sans-serif">v1.2</div>
+<div style="position:fixed;bottom:6px;right:9px;z-index:900;font-size:10px;color:rgba(255,255,255,.28);pointer-events:none;font-family:'Nunito',sans-serif">v1.3</div>
 
 <div id="intro-overlay">
   <div class="intro-logo">🕵️</div>
@@ -208,6 +208,7 @@ let gameStatus = 'idle';
 let robberyQueueTeamIds = [];
 let currentTurnIndex = -1;
 let currentMode = '';
+let robberyDisabled = false;   // GM App vészhelyzeti kikapcsolója
 const LIP_MODE = 'Szájról olvasás!'; // ennél a módnál nem lehet rabolni - nincs mód mindenkire fejhallgatót adni
 
 function initFirebase() {
@@ -223,6 +224,7 @@ function attachListeners() {
   fbDB.ref('activityTeams').on('value', s => renderTeams(s.val()));
   fbDB.ref('activityGame').on('value', s => onGameChange(s.val()));
   fbDB.ref('activityRobbery/queue').on('value', s => onQueueChange(s.val()));
+  fbDB.ref('activityControl/robberyDisabled').on('value', s => { robberyDisabled = !!s.val(); updateButtonState(); });
 
   let lastNewGameSignal = null;
   const newGameAttachedAt = Date.now();
@@ -359,7 +361,12 @@ function updateButtonState() {
   btn.classList.remove('disabled', 'live', 'claimed');
   hint.classList.remove('claimed-text');
 
-  if (isLipMode) {
+  if (robberyDisabled) {
+    // A játékmester vészhelyzetben letiltotta a rablást (pl. beragadt jelzés).
+    btn.classList.add('disabled');
+    btn.textContent = 'RABLÁS';
+    hint.textContent = 'A rablás jelenleg le van tiltva a játékmester által.';
+  } else if (isLipMode) {
     // Szájról olvasás módnál nincs mód a rablásra (nem tudunk minden
     // csapatból 1 játékosnak fejhallgatót adni, hogy ők se halljanak semmit).
     btn.classList.add('disabled');
@@ -389,6 +396,7 @@ function updateButtonState() {
 
 document.getElementById('big-btn').addEventListener('click', () => {
   if (!myTeamId || !fbDB) return;
+  if (robberyDisabled) return;
   if (gameStatus !== 'running') return;
   if ((currentMode || '').trim() === LIP_MODE) return; // szájról olvasásnál nincs rablás
   if (currentTurnIndex >= 0 && String(currentTurnIndex) === String(myTeamId)) return; // saját kör - nem rabolhat magától
